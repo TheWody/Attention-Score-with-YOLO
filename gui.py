@@ -10,12 +10,13 @@ from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QLabel, QPushButton,
     QVBoxLayout, QHBoxLayout, QGridLayout, QFrame,
-    QSizePolicy, QSpacerItem, QLineEdit
+    QSizePolicy, QSpacerItem, QLineEdit, QMessageBox
 )
 
 from camera_manager import CameraFeedManager
 from yolo_model import YOLOModel
 from attention_analyzer import AttentionAnalyzer
+from database_manager import DatabaseManager
 
 
 class VideoProcessingThread(QThread):
@@ -168,6 +169,38 @@ class MetricsTracker:
         self.distracted_frames = 0
 
 
+class MinuteTracker:
+    """Her dakika için metrikleri takip eder."""
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.scores = []
+        self.attentive_counts = []
+        self.distracted_counts = []
+        self.frame_count = 0
+
+    def add_data(self, score, attentive, distracted):
+        self.scores.append(score)
+        self.attentive_counts.append(attentive)
+        self.distracted_counts.append(distracted)
+        self.frame_count += 1
+
+    def get_summary(self):
+        if not self.scores:
+            return None
+
+        return {
+            'avg_score': np.mean(self.scores),
+            'min_score': int(min(self.scores)),
+            'max_score': int(max(self.scores)),
+            'avg_attentive': int(np.mean(self.attentive_counts)),
+            'avg_distracted': int(np.mean(self.distracted_counts)),
+            'total_frames': self.frame_count
+        }
+
+
 class StatCard(QFrame):
     """Widget for displaying a metric card."""
 
@@ -210,6 +243,15 @@ class MainWindow(QMainWindow):
         self.video_thread = None
         self.session_start = None
         self.session_data = []
+
+        # Veritabanı yöneticisi
+        self.db = DatabaseManager()
+        self.current_session_id = None
+
+        # Dakikalık takip
+        self.minute_tracker = MinuteTracker()
+        self.current_minute = 0
+        self.last_minute_save = None
 
         self.snooze_timer = QTimer()
         self.snooze_timer.setSingleShot(True)
@@ -331,7 +373,7 @@ class MainWindow(QMainWindow):
 
         self.start_btn = QPushButton("Start")
         self.stop_btn = QPushButton("Stop")
-        self.save_btn = QPushButton("Save")
+        self.save_btn = QPushButton("Export JSON")
         self.reset_btn = QPushButton("Reset")
 
         self.start_btn.setStyleSheet(
@@ -476,6 +518,29 @@ class MainWindow(QMainWindow):
             self.video_thread.stop()
             self.video_thread = None
 
+    def _save_minute_data(self):
+        """Dakikalık verileri veritabanına kaydeder."""
+        if self.current_session_id is None:
+            return
+
+        summary = self.minute_tracker.get_summary()
+        if summary is None:
+            return
+
+        self.db.save_minute_metric(
+            session_id=self.current_session_id,
+            minute_number=self.current_minute,
+            avg_score=summary['avg_score'],
+            min_score=summary['min_score'],
+            max_score=summary['max_score'],
+            avg_attentive=summary['avg_attentive'],
+            avg_distracted=summary['avg_distracted'],
+            total_frames=summary['total_frames']
+        )
+
+        # Yeni dakika için sıfırla
+        self.current_minute += 1
+        self.minute_tracker.reset()
 
     def on_start(self):
         """Start camera capture and detection."""
@@ -488,6 +553,15 @@ class MainWindow(QMainWindow):
         self.session_data = []
         self.metrics.reset()
         self.start_btn.setEnabled(False)
+
+        # Veritabanında yeni session başlat
+        course_name = self.course_label.text() or "Unknown Course"
+        self.current_session_id = self.db.start_session(course_name)
+
+        # Dakikalık takibi sıfırla
+        self.current_minute = 0
+        self.minute_tracker.reset()
+        self.last_minute_save = datetime.now()
 
         self.video_thread = VideoProcessingThread()
         self.video_thread.frame_ready.connect(self._on_frame_ready)
@@ -503,7 +577,40 @@ class MainWindow(QMainWindow):
         """Stop camera capture."""
         if not self.is_running:
             return
+
         self.is_running = False
+
+        # Son dakikanın verilerini kaydet
+        if self.minute_tracker.frame_count > 0:
+            self._save_minute_data()
+
+        # Session'ı sonlandır
+        if self.current_session_id is not None:
+            final_avg = self.db.end_session(
+                session_id=self.current_session_id,
+                avg_attention_score=self.metrics.rolling_avg(),
+                peak_score=int(self.metrics.peak()),
+                total_students=self.current_total,
+                total_frames=self.metrics.frame_count
+            )
+
+            # Sonucu göster
+            duration = (datetime.now() - self.session_start).total_seconds()
+            minutes = int(duration // 60)
+            seconds = int(duration % 60)
+
+            msg = QMessageBox(self)
+            msg.setWindowTitle("Session Completed")
+            msg.setText(f"Session {self.current_session_id} has been completed")
+            msg.setInformativeText(
+                f"Duration: {minutes} minutes {seconds} seconds\n"
+                f"Average Attention Score: {final_avg:.1f}\n"
+                f"Peak Score: {int(self.metrics.peak())}\n"
+                f"Total Frames: {self.metrics.frame_count}"
+            )
+            msg.setIcon(QMessageBox.Information)
+            msg.exec_()
+
         self._cleanup_resources()
         if hasattr(self, 'update_timer'):
             self.update_timer.stop()
@@ -511,33 +618,18 @@ class MainWindow(QMainWindow):
         self.view_label.setText("Camera stopped.\nClick 'Start' to resume")
 
     def on_save(self):
-        """Save session data."""
-        if not self.session_data:
-            self.warn_label.setText("⚠ No session data to save.")
+        """Export session data to JSON."""
+        if self.current_session_id is None:
+            self.warn_label.setText("⚠ No active session to export.")
+            self.warn_label.setStyleSheet("color: #a32020; font-size: 11pt;")
             self.banner.setVisible(True)
             return
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        save_dir = Path.home() / "AttentionMonitor_Data"
-        save_dir.mkdir(exist_ok=True)
-        filepath = save_dir / f"session_{timestamp}.json"
-
-        session_info = {
-            "timestamp": self.session_start.isoformat() if self.session_start else None,
-            "duration_seconds": (datetime.now() - self.session_start).total_seconds() if self.session_start else 0,
-            "final_avg_score": float(self.metrics.rolling_avg()),
-            "peak_score": float(self.metrics.peak()),
-            "distraction_pct": float(self.metrics.distraction_pct()),
-            "frame_count": self.metrics.frame_count,
-            "frames": self.session_data,
-        }
-
-        with open(filepath, 'w') as f:
-            json.dump(session_info, f, indent=2)
-
-        self.warn_label.setText(f"✓ Session saved to: {filepath}")
-        self.warn_label.setStyleSheet("color: #228b22; font-size: 11pt;")
-        self.banner.setVisible(True)
+        filepath = self.db.export_session_to_json(self.current_session_id)
+        if filepath:
+            self.warn_label.setText(f"✓ Session exported to: {filepath}")
+            self.warn_label.setStyleSheet("color: #228b22; font-size: 11pt;")
+            self.banner.setVisible(True)
 
     def on_reset(self):
         """Reset all metrics."""
@@ -545,10 +637,12 @@ class MainWindow(QMainWindow):
         self.metrics.reset()
         self.session_data = []
         self.session_start = None
+        self.current_session_id = None
+        self.current_minute = 0
+        self.minute_tracker.reset()
         self._update_all_labels()
         self.view_label.setText("Reset complete.\nClick 'Start' to begin")
         self.banner.setVisible(False)
-
 
     def _on_acknowledge(self):
         """Snooze alert."""
@@ -590,6 +684,16 @@ class MainWindow(QMainWindow):
         self.current_attentive = metrics['attentive']
         self.current_distracted = metrics['distracted']
 
+        # Dakikalık takip için veri ekle
+        self.minute_tracker.add_data(score, self.current_attentive, self.current_distracted)
+
+        # Her dakika veritabanına kaydet
+        if self.session_start and self.last_minute_save:
+            elapsed = (datetime.now() - self.last_minute_save).total_seconds()
+            if elapsed >= 60:
+                self._save_minute_data()
+                self.last_minute_save = datetime.now()
+
         if len(self.session_data) < 10000:
             self.session_data.append({
                 "frame": self.metrics.frame_count,
@@ -629,3 +733,9 @@ class MainWindow(QMainWindow):
             minutes, seconds = divmod(int(elapsed), 60)
             hours, minutes = divmod(minutes, 60)
             self.time_badge.setText(f"Time: {hours:02d}:{minutes:02d}:{seconds:02d}")
+
+    def closeEvent(self, event):
+        """Uygulama kapatılırken veritabanını temizle."""
+        self.on_stop()
+        self.db.close()
+        event.accept()
