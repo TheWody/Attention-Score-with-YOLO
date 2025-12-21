@@ -1,9 +1,7 @@
 import cv2
 import numpy as np
 from datetime import datetime
-from pathlib import Path
 from collections import deque
-import json
 
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt5.QtGui import QImage, QPixmap
@@ -16,11 +14,11 @@ from PyQt5.QtWidgets import (
 from camera_manager import CameraFeedManager
 from yolo_model import YOLOModel
 from attention_analyzer import AttentionAnalyzer
-from database_manager import DatabaseManager
+from client import APIClient
 
 
 class VideoProcessingThread(QThread):
-    """Processes frames using YOLO and attention analysis in a separate thread."""
+    """Processes frames using YOLO and attention analysis."""
     frame_ready = pyqtSignal(np.ndarray, list)
     fps_updated = pyqtSignal(float)
     metrics_updated = pyqtSignal(dict)
@@ -33,7 +31,6 @@ class VideoProcessingThread(QThread):
         self.analyzer = None
 
     def initialize_models(self):
-        """Initialize YOLO and analyzer models."""
         try:
             print("Initializing models...")
             self.camera = CameraFeedManager(source=0)
@@ -92,7 +89,6 @@ class VideoProcessingThread(QThread):
                     distracted_count += 1
 
             avg_score = int(total_score / len(processed_data)) if processed_data else 0
-
             annotated_frame = self.annotate_frame(frame.copy(), processed_data)
 
             metrics = {
@@ -104,14 +100,12 @@ class VideoProcessingThread(QThread):
 
             self.frame_ready.emit(annotated_frame, processed_data)
             self.metrics_updated.emit(metrics)
-
             cv2.waitKey(1)
 
         if self.camera:
             self.camera.release()
 
     def annotate_frame(self, frame, student_data):
-        """Draw bounding boxes and scores on frame."""
         for data in student_data:
             bbox = data['bbox']
             score = data['score']
@@ -138,8 +132,6 @@ class VideoProcessingThread(QThread):
 
 
 class MetricsTracker:
-    """Tracks attention metrics over time."""
-
     def __init__(self, history_size=100):
         self.scores = deque(maxlen=history_size)
         self.history_size = history_size
@@ -170,8 +162,6 @@ class MetricsTracker:
 
 
 class MinuteTracker:
-    """Her dakika için metrikleri takip eder."""
-
     def __init__(self):
         self.reset()
 
@@ -202,8 +192,6 @@ class MinuteTracker:
 
 
 class StatCard(QFrame):
-    """Widget for displaying a metric card."""
-
     def __init__(self, title, value, parent=None):
         super().__init__(parent)
         self.setFrameShape(QFrame.StyledPanel)
@@ -211,9 +199,6 @@ class StatCard(QFrame):
             QFrame {
                 background: #ffffff;
                 border-radius: 12px;
-            }
-            QLabel {
-                font-family: "Helvetica", "Arial";
             }
         """)
         layout = QVBoxLayout(self)
@@ -231,22 +216,22 @@ class StatCard(QFrame):
 
 
 class MainWindow(QMainWindow):
-    """Main application window with camera feed and metrics display."""
+    """Main window with server integration."""
 
-    def __init__(self):
+    def __init__(self, api_client: APIClient, course: dict, teacher: dict):
         super().__init__()
-        self.setWindowTitle("Classroom Attention Monitor - Real-Time Detection")
+        self.api_client = api_client
+        self.course = course
+        self.teacher = teacher
+
+        self.setWindowTitle(f"Classroom Monitor - {course['course_code']} ({teacher['name']})")
         self.resize(1200, 500)
 
         self.is_running = False
         self.metrics = MetricsTracker()
         self.video_thread = None
         self.session_start = None
-        self.session_data = []
-
-        # Veritabanı yöneticisi
-        self.db = DatabaseManager()
-        self.current_session_id = None
+        self.server_session_id = None
 
         # Dakikalık takip
         self.minute_tracker = MinuteTracker()
@@ -271,7 +256,6 @@ class MainWindow(QMainWindow):
         self._setup_ui()
 
     def _setup_ui(self):
-        """Setup the user interface."""
         central = QWidget()
         central.setStyleSheet("background: #3c3c3c;")
         self.setCentralWidget(central)
@@ -294,15 +278,11 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(self.banner)
 
     def _create_left_panel(self):
-        """Create left panel with camera feed."""
         left_card = QFrame()
         left_card.setStyleSheet("""
             QFrame {
                 background: #e5e5e5;
                 border-radius: 20px;
-            }
-            QLabel {
-                font-family: "Helvetica", "Arial";
             }
         """)
         left_layout = QVBoxLayout(left_card)
@@ -310,10 +290,11 @@ class MainWindow(QMainWindow):
         left_layout.setSpacing(12)
 
         top_left_row = QHBoxLayout()
-        self.course_label = QLineEdit("EEE 302 | Real-Time Detection")
-        self.course_label.setFrame(False)
+
+        course_text = f"{self.course['course_code']} - {self.course['course_name']}"
+        self.course_label = QLabel(course_text)
         self.course_label.setStyleSheet("""
-            QLineEdit {
+            QLabel {
                 background: #ffffff;
                 border-radius: 14px;
                 padding: 6px 12px;
@@ -323,7 +304,6 @@ class MainWindow(QMainWindow):
                 border: 1px solid #dddddd;
             }
         """)
-        self.course_label.textChanged.connect(self._adjust_title_width)
         top_left_row.addWidget(self.course_label, 0, Qt.AlignLeft)
         top_left_row.addStretch(1)
 
@@ -343,8 +323,8 @@ class MainWindow(QMainWindow):
         top_left_row.addWidget(self.time_badge)
         left_layout.addLayout(top_left_row)
 
-        subtitle = QLabel("Classroom View - YOLO Detection")
-        subtitle.setStyleSheet('font-size: 15pt; color: #555;')
+        subtitle = QLabel(f"Teacher: {self.teacher['name']} | {self.course.get('classroom_location', 'Classroom')}")
+        subtitle.setStyleSheet('font-size: 13pt; color: #555;')
         left_layout.addWidget(subtitle)
 
         self.view_label = QLabel()
@@ -358,7 +338,7 @@ class MainWindow(QMainWindow):
             }
         """)
         self.view_label.setAlignment(Qt.AlignCenter)
-        self.view_label.setText("Camera will appear here\nClick 'Start' to begin real-time detection")
+        self.view_label.setText("Camera will appear here\nClick 'Start' to begin monitoring")
         left_layout.addWidget(self.view_label)
 
         button_layout = self._create_control_buttons()
@@ -367,13 +347,11 @@ class MainWindow(QMainWindow):
         return left_card
 
     def _create_control_buttons(self):
-        """Create control buttons layout."""
         button_layout = QHBoxLayout()
         button_layout.setSpacing(10)
 
-        self.start_btn = QPushButton("Start")
-        self.stop_btn = QPushButton("Stop")
-        self.save_btn = QPushButton("Export JSON")
+        self.start_btn = QPushButton("Start Session")
+        self.stop_btn = QPushButton("End Session")
         self.reset_btn = QPushButton("Reset")
 
         self.start_btn.setStyleSheet(
@@ -384,37 +362,28 @@ class MainWindow(QMainWindow):
             "QPushButton { background: #e84545; color: white; "
             'border-radius: 18px; padding: 6px 20px; font-weight: 600; }'
         )
-        base_button_style = (
+        self.reset_btn.setStyleSheet(
             'QPushButton { background: #ffffff; color: #222; '
-            'border-radius: 18px; padding: 6px 18px; '
-            'border: 1px solid #cfcfcf; }'
+            'border-radius: 18px; padding: 6px 18px; border: 1px solid #cfcfcf; }'
         )
-        self.save_btn.setStyleSheet(base_button_style)
-        self.reset_btn.setStyleSheet(base_button_style)
 
         self.start_btn.clicked.connect(self.on_start)
         self.stop_btn.clicked.connect(self.on_stop)
-        self.save_btn.clicked.connect(self.on_save)
         self.reset_btn.clicked.connect(self.on_reset)
 
         button_layout.addWidget(self.start_btn)
         button_layout.addWidget(self.stop_btn)
-        button_layout.addWidget(self.save_btn)
         button_layout.addWidget(self.reset_btn)
         button_layout.addStretch(1)
 
         return button_layout
 
     def _create_right_panel(self):
-        """Create right panel with metrics."""
         right_card = QFrame()
         right_card.setStyleSheet("""
             QFrame {
                 background: #f0f0f0;
                 border-radius: 20px;
-            }
-            QLabel {
-                font-family: "Helvetica", "Arial";
             }
         """)
         right_layout = QVBoxLayout(right_card)
@@ -441,7 +410,6 @@ class MainWindow(QMainWindow):
         return right_card
 
     def _create_stat_cards(self):
-        """Create grid of stat cards."""
         grid = QGridLayout()
         grid.setSpacing(12)
 
@@ -462,25 +430,18 @@ class MainWindow(QMainWindow):
         return grid
 
     def _create_alert_banner(self):
-        """Create alert banner."""
         banner = QFrame()
-        banner.setStyleSheet("""
-            QFrame {
-                background: #ffe0df;
-                border-radius: 14px;
-            }
-        """)
+        banner.setStyleSheet("QFrame { background: #ffe0df; border-radius: 14px; }")
         banner_layout = QHBoxLayout(banner)
         banner_layout.setContentsMargins(18, 10, 18, 10)
         banner_layout.setSpacing(16)
 
-        self.warn_label = QLabel("⚠ Low attention detected — please re-engage the class")
-        self.warn_label.setStyleSheet("color: #a32020; font-size: 11pt; padding: 6px 10px;")
+        self.warn_label = QLabel("⚠ Low attention detected")
+        self.warn_label.setStyleSheet("color: #a32020; font-size: 11pt;")
         self.warn_label.setWordWrap(True)
-        self.warn_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         banner_layout.addWidget(self.warn_label, 1)
 
-        self.ack_btn = QPushButton("Acknowledge (snooze 30s)")
+        self.ack_btn = QPushButton("Acknowledge")
         self.ack_btn.setStyleSheet("""
             QPushButton {
                 background: #ffffff;
@@ -488,26 +449,15 @@ class MainWindow(QMainWindow):
                 border-radius: 18px;
                 padding: 6px 18px;
                 border: 1px solid #e0b3b2;
-                font-weight: 500;
             }
         """)
         self.ack_btn.clicked.connect(self._on_acknowledge)
-        banner_layout.addWidget(self.ack_btn, 0, Qt.AlignRight)
+        banner_layout.addWidget(self.ack_btn)
 
         banner.setVisible(False)
         return banner
 
-    def _adjust_title_width(self, text):
-        """Adjust title width based on content."""
-        fm = self.course_label.fontMetrics()
-        content_width = fm.horizontalAdvance(text or "EEE 302")
-        padding = 20
-        max_width = max(150, self.width() - self.time_badge.width() - 60)
-        new_width = min(content_width + padding, max_width)
-        self.course_label.setFixedWidth(new_width)
-
     def _cleanup_resources(self):
-        """Clean up threads and timers."""
         if hasattr(self, 'video_thread') and self.video_thread:
             try:
                 self.video_thread.frame_ready.disconnect()
@@ -519,46 +469,44 @@ class MainWindow(QMainWindow):
             self.video_thread = None
 
     def _save_minute_data(self):
-        """Dakikalık verileri veritabanına kaydeder."""
-        if self.current_session_id is None:
+        """Dakikalık verileri server'a gönderir."""
+        if self.server_session_id is None:
             return
 
         summary = self.minute_tracker.get_summary()
         if summary is None:
             return
 
-        self.db.save_minute_metric(
-            session_id=self.current_session_id,
+        success = self.api_client.save_minute_metric(
+            session_id=self.server_session_id,
             minute_number=self.current_minute,
             avg_score=summary['avg_score'],
             min_score=summary['min_score'],
             max_score=summary['max_score'],
             avg_attentive=summary['avg_attentive'],
-            avg_distracted=summary['avg_distracted'],
-            total_frames=summary['total_frames']
+            avg_distracted=summary['avg_distracted']
         )
 
-        # Yeni dakika için sıfırla
-        self.current_minute += 1
-        self.minute_tracker.reset()
+        if success:
+            self.current_minute += 1
+            self.minute_tracker.reset()
 
     def on_start(self):
-        """Start camera capture and detection."""
         if self.is_running:
+            return
+
+        # Server'da session başlat
+        self.server_session_id = self.api_client.start_session(self.course['course_id'])
+        if not self.server_session_id:
+            QMessageBox.critical(self, "Error", "Failed to start session on server")
             return
 
         self._cleanup_resources()
         self.is_running = True
         self.session_start = datetime.now()
-        self.session_data = []
         self.metrics.reset()
         self.start_btn.setEnabled(False)
 
-        # Veritabanında yeni session başlat
-        course_name = self.course_label.text() or "Unknown Course"
-        self.current_session_id = self.db.start_session(course_name)
-
-        # Dakikalık takibi sıfırla
         self.current_minute = 0
         self.minute_tracker.reset()
         self.last_minute_save = datetime.now()
@@ -574,7 +522,6 @@ class MainWindow(QMainWindow):
         self.update_timer.start(100)
 
     def on_stop(self):
-        """Stop camera capture."""
         if not self.is_running:
             return
 
@@ -584,68 +531,51 @@ class MainWindow(QMainWindow):
         if self.minute_tracker.frame_count > 0:
             self._save_minute_data()
 
-        # Session'ı sonlandır
-        if self.current_session_id is not None:
-            final_avg = self.db.end_session(
-                session_id=self.current_session_id,
+        # Session'ı server'da sonlandır
+        if self.server_session_id is not None:
+            duration = (datetime.now() - self.session_start).total_seconds()
+            final_avg = self.api_client.end_session(
+                session_id=self.server_session_id,
+                duration_seconds=int(duration),
                 avg_attention_score=self.metrics.rolling_avg(),
                 peak_score=int(self.metrics.peak()),
-                total_students=self.current_total,
-                total_frames=self.metrics.frame_count
+                total_students=self.current_total
             )
 
-            # Sonucu göster
-            duration = (datetime.now() - self.session_start).total_seconds()
-            minutes = int(duration // 60)
-            seconds = int(duration % 60)
+            if final_avg is not None:
+                minutes = int(duration // 60)
+                seconds = int(duration % 60)
 
-            msg = QMessageBox(self)
-            msg.setWindowTitle("Session Completed")
-            msg.setText(f"Session {self.current_session_id} has been completed")
-            msg.setInformativeText(
-                f"Duration: {minutes} minutes {seconds} seconds\n"
-                f"Average Attention Score: {final_avg:.1f}\n"
-                f"Peak Score: {int(self.metrics.peak())}\n"
-                f"Total Frames: {self.metrics.frame_count}"
-            )
-            msg.setIcon(QMessageBox.Information)
-            msg.exec_()
+                msg = QMessageBox(self)
+                msg.setWindowTitle("Session Completed")
+                msg.setText(f"Session has been saved to server")
+                msg.setInformativeText(
+                    f"Course: {self.course['course_code']}\n"
+                    f"Duration: {minutes} min {seconds} sec\n"
+                    f"Average Attention Score: {final_avg:.1f}\n"
+                    f"Peak Score: {int(self.metrics.peak())}\n"
+                    f"Total Frames: {self.metrics.frame_count}"
+                )
+                msg.setIcon(QMessageBox.Information)
+                msg.exec_()
 
         self._cleanup_resources()
         if hasattr(self, 'update_timer'):
             self.update_timer.stop()
         self.start_btn.setEnabled(True)
-        self.view_label.setText("Camera stopped.\nClick 'Start' to resume")
-
-    def on_save(self):
-        """Export session data to JSON."""
-        if self.current_session_id is None:
-            self.warn_label.setText("⚠ No active session to export.")
-            self.warn_label.setStyleSheet("color: #a32020; font-size: 11pt;")
-            self.banner.setVisible(True)
-            return
-
-        filepath = self.db.export_session_to_json(self.current_session_id)
-        if filepath:
-            self.warn_label.setText(f"✓ Session exported to: {filepath}")
-            self.warn_label.setStyleSheet("color: #228b22; font-size: 11pt;")
-            self.banner.setVisible(True)
+        self.view_label.setText("Session ended.\nClick 'Start Session' to begin new session")
 
     def on_reset(self):
-        """Reset all metrics."""
         self.on_stop()
         self.metrics.reset()
-        self.session_data = []
-        self.session_start = None
-        self.current_session_id = None
+        self.server_session_id = None
         self.current_minute = 0
         self.minute_tracker.reset()
         self._update_all_labels()
-        self.view_label.setText("Reset complete.\nClick 'Start' to begin")
+        self.view_label.setText("Reset complete")
         self.banner.setVisible(False)
 
     def _on_acknowledge(self):
-        """Snooze alert."""
         self.is_snoozed = True
         self.banner.setVisible(False)
         if self.alert_timer.isActive():
@@ -653,16 +583,13 @@ class MainWindow(QMainWindow):
         self.snooze_timer.start(30000)
 
     def _on_snooze_end(self):
-        """Called when snooze ends."""
         self.is_snoozed = False
 
     def _on_alert_timeout(self):
-        """Hide banner after alert timeout."""
         if not self.is_snoozed:
             self.banner.setVisible(False)
 
     def _on_frame_ready(self, frame, student_data):
-        """Display frame in UI."""
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         h, w, ch = rgb_frame.shape
         bytes_per_line = 3 * w
@@ -672,11 +599,9 @@ class MainWindow(QMainWindow):
         self.view_label.setPixmap(scaled_pixmap)
 
     def _on_fps_updated(self, fps):
-        """Update FPS display."""
         self.card_fps.value_label.setText(f"{fps:.1f}")
 
     def _on_metrics_updated(self, metrics):
-        """Update metrics from detection."""
         score = metrics['avg_score']
         self.metrics.add_score(score)
 
@@ -684,47 +609,32 @@ class MainWindow(QMainWindow):
         self.current_attentive = metrics['attentive']
         self.current_distracted = metrics['distracted']
 
-        # Dakikalık takip için veri ekle
         self.minute_tracker.add_data(score, self.current_attentive, self.current_distracted)
 
-        # Her dakika veritabanına kaydet
+        # Her dakika server'a kaydet
         if self.session_start and self.last_minute_save:
             elapsed = (datetime.now() - self.last_minute_save).total_seconds()
             if elapsed >= 60:
                 self._save_minute_data()
                 self.last_minute_save = datetime.now()
 
-        if len(self.session_data) < 10000:
-            self.session_data.append({
-                "frame": self.metrics.frame_count,
-                "score": score,
-                "attentive": self.current_attentive,
-                "distracted": self.current_distracted,
-                "timestamp": (datetime.now() - self.session_start).total_seconds() if self.session_start else 0,
-            })
-
         if self.current_total > 0:
             distracted_pct = (self.current_distracted / self.current_total) * 100
             if distracted_pct >= self.alert_pct and not self.is_snoozed:
                 self.warn_label.setText(
-                    f"⚠ {self.current_distracted} of {self.current_total} students distracted "
-                    f"({distracted_pct:.0f}%) — please re-engage"
+                    f"⚠ {self.current_distracted}/{self.current_total} students distracted ({distracted_pct:.0f}%)"
                 )
-                self.warn_label.setStyleSheet("color: #a32020; font-size: 11pt;")
                 self.banner.setVisible(True)
                 self.alert_timer.start(int(self.alert_display_seconds * 1000))
 
     def _update_ui(self):
-        """Update UI elements."""
         self._update_all_labels()
 
     def _update_all_labels(self):
-        """Update all metric labels."""
         self.score_label.setText(f"{int(self.metrics.rolling_avg())}")
         self.card_avg.value_label.setText(f"{self.metrics.rolling_avg():.1f}")
         self.card_peak.value_label.setText(f"{int(self.metrics.peak())}")
         self.card_distr_pct.value_label.setText(f"{self.metrics.distraction_pct():.1f}%")
-
         self.card_students_att.value_label.setText(f"{self.current_attentive}")
         self.card_students_dist.value_label.setText(f"{self.current_distracted}")
 
@@ -735,7 +645,5 @@ class MainWindow(QMainWindow):
             self.time_badge.setText(f"Time: {hours:02d}:{minutes:02d}:{seconds:02d}")
 
     def closeEvent(self, event):
-        """Uygulama kapatılırken veritabanını temizle."""
         self.on_stop()
-        self.db.close()
         event.accept()
