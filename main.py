@@ -45,7 +45,7 @@ def save_config(config):
 def test_server_connection(url: str) -> bool:
     try:
         response = requests.get(f"{url}/api/admin/stats", timeout=5)
-        return True  # Sunucu çalışıyor (401 bile olsa)
+        return True
     except:
         try:
             response = requests.get(url, timeout=5)
@@ -59,7 +59,7 @@ class ServerConfigDialog(QDialog):
         super().__init__(parent)
         self.server_url = current_url
         self.setWindowTitle("Server Configuration")
-        self.setFixedSize(450, 200)
+        self.setFixedSize(450, 250)
         self.setStyleSheet("background: #f5f5f5;")
         self._setup_ui()
 
@@ -93,6 +93,14 @@ class ServerConfigDialog(QDialog):
             QLineEdit:focus {
                 border: 2px solid #005bbb;
             }
+        """)
+        layout.addWidget(self.url_input)
+
+        btn_layout = QHBoxLayout()
+
+        self.test_btn = QPushButton("Test Connection")
+        self.test_btn.setMinimumHeight(40)
+        self.test_btn.setStyleSheet("""
             QPushButton {
                 background: #f0f0f0;
                 color: #333;
@@ -101,6 +109,13 @@ class ServerConfigDialog(QDialog):
                 font-weight: 600;
             }
             QPushButton:hover { background: #e0e0e0; }
+        """)
+        self.test_btn.clicked.connect(self.test_connection)
+        btn_layout.addWidget(self.test_btn)
+
+        self.connect_btn = QPushButton("Connect")
+        self.connect_btn.setMinimumHeight(40)
+        self.connect_btn.setStyleSheet("""
             QPushButton {
                 background: #005bbb;
                 color: white;
@@ -109,6 +124,13 @@ class ServerConfigDialog(QDialog):
                 font-weight: 600;
             }
             QPushButton:hover { background: #004a99; }
+        """)
+        self.connect_btn.clicked.connect(self.save_and_connect)
+        btn_layout.addWidget(self.connect_btn)
+
+        layout.addLayout(btn_layout)
+
+    def test_connection(self):
         url = self.url_input.text().strip().rstrip('/')
         self.test_btn.setText("Testing...")
         self.test_btn.setEnabled(False)
@@ -147,3 +169,30 @@ def main():
         QPushButton {
             color: #222222;
         }
+    """)
+
+    config = load_config()
+    server_url = config.get("server_url", "http://localhost:5001")
+
+    if not test_server_connection(server_url):
+        dialog = ServerConfigDialog(server_url)
+        if dialog.exec_() == QDialog.Accepted:
+            server_url = dialog.server_url
+            config["server_url"] = server_url
+            save_config(config)
+        else:
+            sys.exit(0)
+
+    login = LoginWindow(server_url)
+    if login.exec_() == QDialog.Accepted:
+        api_client = APIClient(server_url)
+        api_client.token = login.token
+        api_client.teacher_info = login.teacher_info
+
+        window = MainWindow(api_client)
+        window.show()
+        sys.exit(app.exec_())
+
+if __name__ == "__main__":
+    main()
+

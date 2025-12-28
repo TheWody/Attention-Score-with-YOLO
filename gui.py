@@ -15,9 +15,10 @@ from camera_manager import CameraFeedManager
 from yolo_model import YOLOModel
 from attention_analyzer import AttentionAnalyzer
 from client import APIClient
-from lesson_report import generate_lesson_report
+
 
 class VideoProcessingThread(QThread):
+    """Processes frames using YOLO and attention analysis."""
     frame_ready = pyqtSignal(np.ndarray, list)
     fps_updated = pyqtSignal(float)
     metrics_updated = pyqtSignal(dict)
@@ -129,6 +130,7 @@ class VideoProcessingThread(QThread):
         self.running = False
         self.wait()
 
+
 class MetricsTracker:
     def __init__(self, history_size=100):
         self.scores = deque(maxlen=history_size)
@@ -157,6 +159,7 @@ class MetricsTracker:
         self.scores.clear()
         self.frame_count = 0
         self.distracted_frames = 0
+
 
 class MinuteTracker:
     def __init__(self):
@@ -187,6 +190,7 @@ class MinuteTracker:
             'total_frames': self.frame_count
         }
 
+
 class StatCard(QFrame):
     def __init__(self, title, value, parent=None):
         super().__init__(parent)
@@ -196,6 +200,23 @@ class StatCard(QFrame):
                 background: #ffffff;
                 border-radius: 12px;
             }
+        """)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 10, 16, 10)
+
+        self.title_label = QLabel(title)
+        self.title_label.setStyleSheet("color: #555; font-size: 11pt;")
+
+        self.value_label = QLabel(str(value))
+        self.value_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.value_label.setStyleSheet("font-weight: 600; font-size: 18pt; color: #222;")
+
+        layout.addWidget(self.value_label)
+        layout.addWidget(self.title_label)
+
+
+class MainWindow(QMainWindow):
+    """Main window with server integration."""
 
     def __init__(self, api_client: APIClient, course: dict, teacher: dict):
         super().__init__()
@@ -212,10 +233,10 @@ class StatCard(QFrame):
         self.session_start = None
         self.server_session_id = None
 
+        # Dakikalık takip
         self.minute_tracker = MinuteTracker()
         self.current_minute = 0
         self.last_minute_save = None
-        self.minute_data_list = []  # Rapor için tüm dakikalık verileri sakla
 
         self.snooze_timer = QTimer()
         self.snooze_timer.setSingleShot(True)
@@ -263,6 +284,16 @@ class StatCard(QFrame):
                 background: #e5e5e5;
                 border-radius: 20px;
             }
+        """)
+        left_layout = QVBoxLayout(left_card)
+        left_layout.setContentsMargins(24, 20, 24, 20)
+        left_layout.setSpacing(12)
+
+        top_left_row = QHBoxLayout()
+
+        course_text = f"{self.course['course_code']} - {self.course['course_name']}"
+        self.course_label = QLabel(course_text)
+        self.course_label.setStyleSheet("""
             QLabel {
                 background: #ffffff;
                 border-radius: 14px;
@@ -272,6 +303,14 @@ class StatCard(QFrame):
                 color: #222;
                 border: 1px solid #dddddd;
             }
+        """)
+        top_left_row.addWidget(self.course_label, 0, Qt.AlignLeft)
+        top_left_row.addStretch(1)
+
+        self.time_badge = QLabel("Time: 00:00:00")
+        self.time_badge.setAlignment(Qt.AlignCenter)
+        self.time_badge.setFixedHeight(20)
+        self.time_badge.setStyleSheet("""
             QLabel {
                 background: #ffffff;
                 border-radius: 14px;
@@ -280,15 +319,130 @@ class StatCard(QFrame):
                 border: 1px solid #dddddd;
                 color: #333;
             }
+        """)
+        top_left_row.addWidget(self.time_badge)
+        left_layout.addLayout(top_left_row)
+
+        subtitle = QLabel(f"Teacher: {self.teacher['name']} | {self.course.get('classroom_location', 'Classroom')}")
+        subtitle.setStyleSheet('font-size: 13pt; color: #555;')
+        left_layout.addWidget(subtitle)
+
+        self.view_label = QLabel()
+        self.view_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.view_label.setMaximumHeight(800)
+        self.view_label.setStyleSheet("""
             QLabel {
                 background: #f7f7f7;
                 border-radius: 14px;
                 border: 1px solid #dddddd;
             }
+        """)
+        self.view_label.setAlignment(Qt.AlignCenter)
+        self.view_label.setText("Camera will appear here\nClick 'Start' to begin monitoring")
+        left_layout.addWidget(self.view_label)
+
+        button_layout = self._create_control_buttons()
+        left_layout.addLayout(button_layout)
+
+        return left_card
+
+    def _create_control_buttons(self):
+        button_layout = QHBoxLayout()
+        button_layout.setSpacing(10)
+
+        self.start_btn = QPushButton("Start Session")
+        self.stop_btn = QPushButton("End Session")
+        self.reset_btn = QPushButton("Reset")
+
+        self.start_btn.setStyleSheet(
+            "QPushButton { background: #29b566; color: white; "
+            'border-radius: 18px; padding: 6px 20px; font-weight: 600; }'
+        )
+        self.stop_btn.setStyleSheet(
+            "QPushButton { background: #e84545; color: white; "
+            'border-radius: 18px; padding: 6px 20px; font-weight: 600; }'
+        )
+        self.reset_btn.setStyleSheet(
+            'QPushButton { background: #ffffff; color: #222; '
+            'border-radius: 18px; padding: 6px 18px; border: 1px solid #cfcfcf; }'
+        )
+
+        self.start_btn.clicked.connect(self.on_start)
+        self.stop_btn.clicked.connect(self.on_stop)
+        self.reset_btn.clicked.connect(self.on_reset)
+
+        button_layout.addWidget(self.start_btn)
+        button_layout.addWidget(self.stop_btn)
+        button_layout.addWidget(self.reset_btn)
+        button_layout.addStretch(1)
+
+        return button_layout
+
+    def _create_right_panel(self):
+        right_card = QFrame()
+        right_card.setStyleSheet("""
             QFrame {
                 background: #f0f0f0;
                 border-radius: 20px;
             }
+        """)
+        right_layout = QVBoxLayout(right_card)
+        right_layout.setContentsMargins(24, 20, 24, 20)
+        right_layout.setSpacing(14)
+
+        title_label = QLabel("Attention Score")
+        title_label.setStyleSheet("font-size: 16pt; font-weight: 600; color: #222;")
+        right_layout.addWidget(title_label)
+
+        self.score_label = QLabel("—")
+        self.score_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.score_label.setStyleSheet("font-size: 40pt; font-weight: 700; color: #005bbb;")
+        right_layout.addWidget(self.score_label)
+
+        desc_label = QLabel("0 = low attention, 100 = high")
+        desc_label.setStyleSheet("font-size: 10pt; color: #555;")
+        right_layout.addWidget(desc_label)
+
+        grid = self._create_stat_cards()
+        right_layout.addLayout(grid)
+        right_layout.addItem(QSpacerItem(20, 20, QSizePolicy.Minimum, QSizePolicy.Expanding))
+
+        return right_card
+
+    def _create_stat_cards(self):
+        grid = QGridLayout()
+        grid.setSpacing(12)
+
+        self.card_avg = StatCard("Avg (rolling)", "—")
+        self.card_peak = StatCard("Peak", "—")
+        self.card_distr_pct = StatCard("Distracted %", "—")
+        self.card_fps = StatCard("FPS", "—")
+        self.card_students_att = StatCard("Students (attent.)", "—")
+        self.card_students_dist = StatCard("Students (distr.)", "—")
+
+        grid.addWidget(self.card_avg, 0, 0)
+        grid.addWidget(self.card_peak, 0, 1)
+        grid.addWidget(self.card_distr_pct, 0, 2)
+        grid.addWidget(self.card_fps, 1, 0)
+        grid.addWidget(self.card_students_att, 1, 1)
+        grid.addWidget(self.card_students_dist, 1, 2)
+
+        return grid
+
+    def _create_alert_banner(self):
+        banner = QFrame()
+        banner.setStyleSheet("QFrame { background: #ffe0df; border-radius: 14px; }")
+        banner_layout = QHBoxLayout(banner)
+        banner_layout.setContentsMargins(18, 10, 18, 10)
+        banner_layout.setSpacing(16)
+
+        self.warn_label = QLabel("⚠ Low attention detected")
+        self.warn_label.setStyleSheet("color: #a32020; font-size: 11pt;")
+        self.warn_label.setWordWrap(True)
+        banner_layout.addWidget(self.warn_label, 1)
+
+        self.ack_btn = QPushButton("Acknowledge")
+        self.ack_btn.setStyleSheet("""
             QPushButton {
                 background: #ffffff;
                 color: #222;
@@ -296,21 +450,32 @@ class StatCard(QFrame):
                 padding: 6px 18px;
                 border: 1px solid #e0b3b2;
             }
+        """)
+        self.ack_btn.clicked.connect(self._on_acknowledge)
+        banner_layout.addWidget(self.ack_btn)
+
+        banner.setVisible(False)
+        return banner
+
+    def _cleanup_resources(self):
+        if hasattr(self, 'video_thread') and self.video_thread:
+            try:
+                self.video_thread.frame_ready.disconnect()
+                self.video_thread.fps_updated.disconnect()
+                self.video_thread.metrics_updated.disconnect()
+            except:
+                pass
+            self.video_thread.stop()
+            self.video_thread = None
+
+    def _save_minute_data(self):
+        """Dakikalık verileri server'a gönderir."""
         if self.server_session_id is None:
             return
 
         summary = self.minute_tracker.get_summary()
         if summary is None:
             return
-
-        self.minute_data_list.append({
-            'minute_number': self.current_minute,
-            'avg_score': summary['avg_score'],
-            'min_score': summary['min_score'],
-            'max_score': summary['max_score'],
-            'avg_attentive': summary['avg_attentive'],
-            'avg_distracted': summary['avg_distracted']
-        })
 
         success = self.api_client.save_minute_metric(
             session_id=self.server_session_id,
@@ -330,6 +495,7 @@ class StatCard(QFrame):
         if self.is_running:
             return
 
+        # Server'da session başlat
         self.server_session_id = self.api_client.start_session(self.course['course_id'])
         if not self.server_session_id:
             QMessageBox.critical(self, "Error", "Failed to start session on server")
@@ -344,7 +510,6 @@ class StatCard(QFrame):
         self.current_minute = 0
         self.minute_tracker.reset()
         self.last_minute_save = datetime.now()
-        self.minute_data_list = []  # Rapor verilerini sıfırla
 
         self.video_thread = VideoProcessingThread()
         self.video_thread.frame_ready.connect(self._on_frame_ready)
@@ -362,9 +527,11 @@ class StatCard(QFrame):
 
         self.is_running = False
 
+        # Son dakikanın verilerini kaydet
         if self.minute_tracker.frame_count > 0:
             self._save_minute_data()
 
+        # Session'ı server'da sonlandır
         if self.server_session_id is not None:
             duration = (datetime.now() - self.session_start).total_seconds()
             final_avg = self.api_client.end_session(
@@ -379,21 +546,6 @@ class StatCard(QFrame):
                 minutes = int(duration // 60)
                 seconds = int(duration % 60)
 
-                try:
-                    report_path = generate_lesson_report(
-                        minute_data=self.minute_data_list,
-                        course_info=self.course,
-                        teacher_name=self.teacher['name'],
-                        duration_seconds=int(duration),
-                        avg_attention_score=final_avg,
-                        hypothesized_mean=60.0,
-                        alpha=0.05,
-                        open_browser=True
-                    )
-                    print(f"Report generated: {report_path}")
-                except Exception as e:
-                    print(f"Error generating report: {e}")
-
                 msg = QMessageBox(self)
                 msg.setWindowTitle("Session Completed")
                 msg.setText(f"Session has been saved to server")
@@ -402,8 +554,7 @@ class StatCard(QFrame):
                     f"Duration: {minutes} min {seconds} sec\n"
                     f"Average Attention Score: {final_avg:.1f}\n"
                     f"Peak Score: {int(self.metrics.peak())}\n"
-                    f"Total Frames: {self.metrics.frame_count}\n\n"
-                    f"📊 Detailed analysis report opened in browser!"
+                    f"Total Frames: {self.metrics.frame_count}"
                 )
                 msg.setIcon(QMessageBox.Information)
                 msg.exec_()
@@ -420,7 +571,6 @@ class StatCard(QFrame):
         self.server_session_id = None
         self.current_minute = 0
         self.minute_tracker.reset()
-        self.minute_data_list = []  # Rapor verilerini sıfırla
         self._update_all_labels()
         self.view_label.setText("Reset complete")
         self.banner.setVisible(False)
@@ -461,6 +611,7 @@ class StatCard(QFrame):
 
         self.minute_tracker.add_data(score, self.current_attentive, self.current_distracted)
 
+        # Her dakika server'a kaydet
         if self.session_start and self.last_minute_save:
             elapsed = (datetime.now() - self.last_minute_save).total_seconds()
             if elapsed >= 60:
