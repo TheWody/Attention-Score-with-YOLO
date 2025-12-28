@@ -33,18 +33,14 @@ class FER2013ToYOLO:
         self.image_size = 48  # FER-2013 orijinal boyut
 
     def convert_dataset(self):
-        """FER-2013 CSV'yi YOLO formatına dönüştürür."""
         print("Veri seti dönüştürülüyor...")
 
-        # Klasör yapısı oluştur
         for split in ['train', 'val']:
             (self.output_path / 'images' / split).mkdir(parents=True, exist_ok=True)
             (self.output_path / 'labels' / split).mkdir(parents=True, exist_ok=True)
 
-        # CSV dosyasını oku
         csv_path = self.fer_data_path / 'fer2013.csv'
         if not csv_path.exists():
-            # Alternatif: klasör yapısından oku
             self._convert_from_folders()
             return
 
@@ -54,24 +50,19 @@ class FER2013ToYOLO:
             pixels = np.array(row['pixels'].split(), dtype=np.uint8)
             image = pixels.reshape(48, 48)
 
-            # Görüntüyü büyüt (YOLO için daha iyi)
             image = cv2.resize(image, (224, 224))
 
             emotion = row['emotion']
             usage = 'train' if row['Usage'] != 'PublicTest' else 'val'
 
-            # Görüntüyü kaydet
             img_filename = f"{idx:05d}.jpg"
             img_path = self.output_path / 'images' / usage / img_filename
             cv2.imwrite(str(img_path), image)
 
-            # YOLO etiketi oluştur (tüm yüz = bbox)
-            # Format: class x_center y_center width height (normalized)
             label_filename = f"{idx:05d}.txt"
             label_path = self.output_path / 'labels' / usage / label_filename
 
             with open(label_path, 'w') as f:
-                # Tüm görüntü yüz olduğu için: 0.5 0.5 1.0 1.0
                 f.write(f"{emotion} 0.5 0.5 1.0 1.0\n")
 
             if idx % 1000 == 0:
@@ -81,7 +72,6 @@ class FER2013ToYOLO:
         print("Dönüştürme tamamlandı!")
 
     def _convert_from_folders(self):
-        """Klasör yapısından dönüştürür (train/angry, train/happy, vb.)"""
         print("Klasör yapısından dönüştürülüyor...")
 
         idx = 0
@@ -97,7 +87,6 @@ class FER2013ToYOLO:
                 if not emotion_path.is_dir():
                     continue
 
-                # Duygu indeksini bul
                 emotion_idx = None
                 for eid, ename in EMOTION_LABELS.items():
                     if ename == emotion_name.lower():
@@ -133,7 +122,6 @@ class FER2013ToYOLO:
         print("Dönüştürme tamamlandı!")
 
     def _create_yaml_config(self):
-        """YOLO eğitimi için YAML config dosyası oluşturur."""
         yaml_content = f"""
 path: {self.output_path.absolute()}
 train: images/train
@@ -155,12 +143,8 @@ names:
 
 
 def train_yolo_fer(data_yaml: str, epochs: int = 100, batch_size: int = 16):
-    """YOLO modelini FER-2013 ile eğitir."""
+    model = YOLO('yolov8n.pt')
 
-    # Önceden eğitilmiş YOLO modelini yükle
-    model = YOLO('yolov8n.pt')  # nano model, hızlı eğitim için
-
-    # Modeli eğit
     results = model.train(
         data=data_yaml,
         epochs=epochs,
@@ -173,7 +157,6 @@ def train_yolo_fer(data_yaml: str, epochs: int = 100, batch_size: int = 16):
         plots=True
     )
 
-    # En iyi modeli kaydet
     best_model_path = Path('runs/fer_training/yolo_fer_finetuned/weights/best.pt')
     target_path = Path('models/yolo_fer_finetuned.pt')
     target_path.parent.mkdir(exist_ok=True)
@@ -195,12 +178,10 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    # Veri setini dönüştür
     converter = FER2013ToYOLO(args.data_path, args.output_path)
     converter.convert_dataset()
 
     if not args.convert_only:
-        # Modeli eğit
         yaml_path = Path(args.output_path) / 'fer2013.yaml'
         train_yolo_fer(str(yaml_path), args.epochs, args.batch_size)
 
