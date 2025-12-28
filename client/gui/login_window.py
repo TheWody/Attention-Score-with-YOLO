@@ -202,7 +202,7 @@ class LoginWindow(QDialog):
                 "Your account has been created. Please login with your credentials."
             )
 
-<    def on_server_settings(self):
+    def on_server_settings(self):
         settings_dialog = ServerSettingsDialog(self.api_client, self)
         if settings_dialog.exec_() == QDialog.Accepted:
             QMessageBox.information(
