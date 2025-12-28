@@ -539,7 +539,26 @@ def get_dashboard_stats(current_teacher):
         'active_sessions': active_sessions
     })
 
+def create_default_admin():
+    """Varsayılan admin hesabı oluştur (eğer hiç admin yoksa)"""
+    if Admin.query.count() == 0:
+        default_admin = Admin(
+            username='admin',
+            password_hash=generate_password_hash('admin123'),
+            name='Sistem Yöneticisi'
+        )
+        db.session.add(default_admin)
+        db.session.commit()
+        print("=" * 50)
+        print("🔐 VARSAYILAN ADMIN HESABI OLUŞTURULDU!")
+        print("   Kullanıcı Adı: admin")
+        print("   Şifre: admin123")
+        print("   ⚠️  Güvenlik için şifreyi değiştirin!")
+        print("=" * 50)
+
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
+        create_default_admin()
     app.run(host='0.0.0.0', port=5001, debug=True)
