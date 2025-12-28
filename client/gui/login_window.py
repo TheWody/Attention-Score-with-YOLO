@@ -124,6 +124,21 @@ class LoginWindow(QDialog):
         register_link.clicked.connect(self.on_register)
         layout.addWidget(register_link)
 
+        server_settings_btn = QPushButton("⚙ Server Settings")
+        server_settings_btn.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                color: #666;
+                border: none;
+                font-size: 9pt;
+            }
+            QPushButton:hover {
+                color: #005bbb;
+            }
+        """)
+        server_settings_btn.clicked.connect(self.on_server_settings)
+        layout.addWidget(server_settings_btn)
+
         layout.addStretch()
 
     def on_login(self):
@@ -186,6 +201,151 @@ class LoginWindow(QDialog):
                 "Registration Successful",
                 "Your account has been created. Please login with your credentials."
             )
+
+<    def on_server_settings(self):
+        settings_dialog = ServerSettingsDialog(self.api_client, self)
+        if settings_dialog.exec_() == QDialog.Accepted:
+            QMessageBox.information(
+                self,
+                "Settings Saved",
+                "Server settings have been saved. Please restart the application for changes to take effect."
+            )
+
+
+class ServerSettingsDialog(QDialog):
+
+    def __init__(self, api_client: APIClient, parent=None):
+        super().__init__(parent)
+        self.api_client = api_client
+        self.setWindowTitle("Server Settings")
+        self.setFixedSize(450, 250)
+        self.setStyleSheet("background: #f5f5f5;")
+        self._setup_ui()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(30, 25, 30, 25)
+        layout.setSpacing(15)
+
+        title = QLabel("Server Connection Settings")
+        title.setFont(QFont("Segoe UI", 14, QFont.Bold))
+        title.setStyleSheet("color: #222;")
+        layout.addWidget(title)
+
+        info_label = QLabel("Enter the server IP address (e.g., 192.168.1.100)")
+        info_label.setStyleSheet("color: #666; font-size: 9pt;")
+        layout.addWidget(info_label)
+
+        layout.addSpacing(10)
+
+        ip_label = QLabel("Server URL:")
+        ip_label.setStyleSheet("color: #333; font-size: 10pt; font-weight: 500;")
+        layout.addWidget(ip_label)
+
+        self.server_url_input = QLineEdit()
+        self.server_url_input.setPlaceholderText("http://192.168.1.100:5001")
+        self.server_url_input.setText(self._load_current_url())
+        self.server_url_input.setMinimumHeight(45)
+        self.server_url_input.setStyleSheet("""
+            QLineEdit {
+                padding: 12px 15px;
+                border: 2px solid #ddd;
+                border-radius: 8px;
+                font-size: 12pt;
+                background: white;
+                color: #222;
+            }
+            QLineEdit:focus {
+                border: 2px solid #005bbb;
+            }
+        """)
+        layout.addWidget(self.server_url_input)
+
+        layout.addSpacing(10)
+
+        button_layout = QHBoxLayout()
+
+        test_btn = QPushButton("Test Connection")
+        test_btn.setStyleSheet("""
+            QPushButton {
+                background: #666;
+                color: white;
+                padding: 10px 15px;
+                border-radius: 8px;
+                font-size: 10pt;
+            }
+            QPushButton:hover {
+                background: #555;
+            }
+        """)
+        test_btn.clicked.connect(self.test_connection)
+        button_layout.addWidget(test_btn)
+
+        save_btn = QPushButton("Save")
+        save_btn.setStyleSheet("""
+            QPushButton {
+                background: #005bbb;
+                color: white;
+                padding: 10px 20px;
+                border-radius: 8px;
+                font-size: 10pt;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background: #004a99;
+            }
+        """)
+        save_btn.clicked.connect(self.save_settings)
+        button_layout.addWidget(save_btn)
+
+        layout.addLayout(button_layout)
+
+    def _load_current_url(self):
+        import json
+        from pathlib import Path
+        config_path = Path(__file__).parent.parent / "config.json"
+        try:
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+                return config.get('server_url', 'http://localhost:5001')
+        except Exception:
+            return 'http://localhost:5001'
+
+    def test_connection(self):
+        import requests
+        url = self.server_url_input.text().strip()
+        if not url:
+            QMessageBox.warning(self, "Error", "Please enter a server URL")
+            return
+
+        try:
+            response = requests.get(f"{url}/api/health", timeout=5)
+            if response.status_code == 200:
+                QMessageBox.information(self, "Success", "✅ Connection successful!")
+            else:
+                QMessageBox.warning(self, "Error", f"Server responded with status: {response.status_code}")
+        except requests.exceptions.ConnectionError:
+            QMessageBox.critical(self, "Connection Failed", "❌ Could not connect to server.\n\nPlease check:\n- Server is running\n- IP address is correct\n- Firewall allows connection")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Connection test failed: {str(e)}")
+
+    def save_settings(self):
+        import json
+        from pathlib import Path
+        url = self.server_url_input.text().strip()
+        if not url:
+            QMessageBox.warning(self, "Error", "Please enter a server URL")
+            return
+
+        config_path = Path(__file__).parent.parent / "config.json"
+        try:
+            config = {'server_url': url, 'version': '1.0.0'}
+            with open(config_path, 'w') as f:
+                json.dump(config, f, indent=4)
+            self.api_client.base_url = url
+            self.accept()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save settings: {str(e)}")
 
 
 class AddCourseDialog(QDialog):
