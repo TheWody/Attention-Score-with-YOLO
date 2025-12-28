@@ -1,11 +1,22 @@
 import sys
+import json
+from pathlib import Path
 from PyQt5.QtWidgets import QApplication, QMessageBox
 from client.gui import MainWindow, LoginWindow
 from client import APIClient
 
 
+def load_config():
+    config_path = Path(__file__).parent / "client" / "config.json"
+    try:
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+            return config.get('server_url', 'http://localhost:5001')
+    except Exception:
+        return 'http://localhost:5001'
+
+
 def main():
-    """Main entry point with server integration."""
     app = QApplication(sys.argv)
 
     app.setStyleSheet("""
@@ -14,7 +25,8 @@ def main():
         }
     """)
 
-    SERVER_URL = "http://localhost:5001"
+    SERVER_URL = load_config()
+    print(f"Server URL: {SERVER_URL}")
 
     api_client = APIClient(base_url=SERVER_URL)
 

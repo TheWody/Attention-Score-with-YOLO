@@ -12,13 +12,19 @@ def main():
 
     init_database()
 
+    import socket
+    local_ip = socket.gethostbyname(socket.gethostname())
+
     print("\n📍 Server başlatılıyor...")
-    print("   - API: http://localhost:5001/api")
-    print("   - Admin Dashboard: http://localhost:5001/dashboard")
+    print(f"   - Yerel IP: {local_ip}")
+    print(f"   - API: http://{local_ip}:5001/api")
+    print(f"   - Admin Dashboard: http://{local_ip}:5001/dashboard")
+    print("\n💡 Diğer bilgisayardan bağlanmak için:")
+    print(f"   Client'ta server URL'ini http://{local_ip}:5001 olarak ayarlayın")
     print("\n⚡ Durdurmak için Ctrl+C basın")
     print("=" * 50 + "\n")
 
-    app.run(host='127.0.0.1', port=5001, debug=True)
+    app.run(host='0.0.0.0', port=5001, debug=True)
 
 if __name__ == '__main__':
     main()
