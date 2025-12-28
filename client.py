@@ -1,10 +1,7 @@
 import requests
 from typing import Optional, Dict, List
-import json
-
 
 class APIClient:
-    """Server ile iletişim kuran API client."""
 
     def __init__(self, base_url: str = "http://localhost:5001"):
         self.base_url = base_url
@@ -12,14 +9,12 @@ class APIClient:
         self.teacher_info: Optional[Dict] = None
 
     def _get_headers(self) -> Dict:
-        """Request header'larını döndürür."""
         headers = {'Content-Type': 'application/json'}
         if self.token:
             headers['Authorization'] = f'Bearer {self.token}'
         return headers
 
     def login(self, email: str, password: str) -> bool:
-        """Hoca girişi yapar."""
         try:
             response = requests.post(
                 f"{self.base_url}/api/auth/login",
@@ -41,7 +36,6 @@ class APIClient:
             return False
 
     def register(self, name: str, email: str, password: str, department: str = "") -> bool:
-        """Yeni hoca kaydı oluşturur."""
         try:
             response = requests.post(
                 f"{self.base_url}/api/auth/register",
@@ -60,7 +54,6 @@ class APIClient:
             return False
 
     def get_courses(self) -> List[Dict]:
-        """Hoca'nın derslerini getirir."""
         try:
             response = requests.get(
                 f"{self.base_url}/api/courses",
@@ -76,7 +69,6 @@ class APIClient:
 
     def create_course(self, course_code: str, course_name: str,
                       classroom_location: str = "", semester: str = "") -> Optional[int]:
-        """Yeni ders oluşturur."""
         try:
             response = requests.post(
                 f"{self.base_url}/api/courses",
@@ -97,7 +89,6 @@ class APIClient:
             return None
 
     def start_session(self, course_id: int) -> Optional[int]:
-        """Yeni session başlatır."""
         try:
             response = requests.post(
                 f"{self.base_url}/api/sessions/start",
@@ -117,7 +108,6 @@ class APIClient:
     def save_minute_metric(self, session_id: int, minute_number: int,
                            avg_score: float, min_score: int, max_score: int,
                            avg_attentive: int, avg_distracted: int) -> bool:
-        """Dakikalık metriği server'a gönderir."""
         try:
             response = requests.post(
                 f"{self.base_url}/api/sessions/{session_id}/minute",
@@ -143,7 +133,6 @@ class APIClient:
     def end_session(self, session_id: int, duration_seconds: int,
                     avg_attention_score: float, peak_score: int,
                     total_students: int) -> Optional[float]:
-        """Session'ı sonlandırır."""
         try:
             response = requests.post(
                 f"{self.base_url}/api/sessions/{session_id}/end",
@@ -166,7 +155,6 @@ class APIClient:
             return None
 
     def get_sessions(self, course_id: Optional[int] = None) -> List[Dict]:
-        """Session'ları getirir."""
         try:
             params = {'course_id': course_id} if course_id else {}
             response = requests.get(
@@ -183,7 +171,6 @@ class APIClient:
             return []
 
     def get_session_detail(self, session_id: int) -> Optional[Dict]:
-        """Session detaylarını getirir."""
         try:
             response = requests.get(
                 f"{self.base_url}/api/sessions/{session_id}",
@@ -198,7 +185,6 @@ class APIClient:
             return None
 
     def get_dashboard_stats(self) -> Optional[Dict]:
-        """Dashboard istatistiklerini getirir."""
         try:
             response = requests.get(
                 f"{self.base_url}/api/dashboard/stats",
@@ -210,4 +196,118 @@ class APIClient:
             return None
         except Exception as e:
             print(f"Get dashboard stats error: {e}")
+            return None
+
+class AdminClient:
+
+    def __init__(self, base_url: str = "http://localhost:5001"):
+        self.base_url = base_url
+        self.token: Optional[str] = None
+        self.admin_info: Optional[Dict] = None
+
+    def _get_headers(self) -> Dict:
+        headers = {'Content-Type': 'application/json'}
+        if self.token:
+            headers['Authorization'] = f'Bearer {self.token}'
+        return headers
+
+    def login(self, username: str, password: str) -> bool:
+        try:
+            response = requests.post(
+                f"{self.base_url}/api/admin/login",
+                json={'username': username, 'password': password},
+                headers={'Content-Type': 'application/json'}
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                self.token = data['token']
+                self.admin_info = data['admin']
+                print(f"Admin girişi başarılı: {self.admin_info['name']}")
+                return True
+            else:
+                print(f"Giriş başarısız: {response.json().get('message', 'Unknown error')}")
+                return False
+        except Exception as e:
+            print(f"Admin login error: {e}")
+            return False
+
+    def get_stats(self) -> Optional[Dict]:
+        try:
+            response = requests.get(
+                f"{self.base_url}/api/admin/stats",
+                headers=self._get_headers()
+            )
+
+            if response.status_code == 200:
+                return response.json()
+            return None
+        except Exception as e:
+            print(f"Get stats error: {e}")
+            return None
+
+    def get_all_teachers(self) -> List[Dict]:
+        try:
+            response = requests.get(
+                f"{self.base_url}/api/admin/teachers",
+                headers=self._get_headers()
+            )
+
+            if response.status_code == 200:
+                return response.json()
+            return []
+        except Exception as e:
+            print(f"Get teachers error: {e}")
+            return []
+
+    def get_all_courses(self) -> List[Dict]:
+        try:
+            response = requests.get(
+                f"{self.base_url}/api/admin/courses",
+                headers=self._get_headers()
+            )
+
+            if response.status_code == 200:
+                return response.json()
+            return []
+        except Exception as e:
+            print(f"Get courses error: {e}")
+            return []
+
+    def get_all_sessions(self, teacher_id: int = None, course_id: int = None,
+                         status: str = None) -> List[Dict]:
+        try:
+            params = {}
+            if teacher_id:
+                params['teacher_id'] = teacher_id
+            if course_id:
+                params['course_id'] = course_id
+            if status:
+                params['status'] = status
+
+            response = requests.get(
+                f"{self.base_url}/api/admin/sessions",
+                params=params,
+                headers=self._get_headers()
+            )
+
+            if response.status_code == 200:
+                return response.json()
+            return []
+        except Exception as e:
+            print(f"Get sessions error: {e}")
+            return []
+
+    def get_session_detail(self, session_id: int) -> Optional[Dict]:
+        try:
+            response = requests.get(
+                f"{self.base_url}/api/admin/sessions/{session_id}",
+                headers=self._get_headers()
+            )
+
+            if response.status_code == 200:
+                return response.json()
+            return None
+        except Exception as e:
+            print(f"Get session detail error: {e}")
             return None

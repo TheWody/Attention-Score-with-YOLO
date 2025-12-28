@@ -1,8 +1,6 @@
 from ultralytics import YOLO
 
-
 class YOLOModel:
-    """YOLOv8 modellerini yükler ve çıkarım (inference) işlemlerini yönetir."""
 
     def __init__(self, pose_model_path='yolov8n-pose.pt', emotion_model_path='yolov8n-emotion.pt'):
 
@@ -24,12 +22,10 @@ class YOLOModel:
                 self.emotion_model = None
 
     def detect_pose(self, frame):
-        """Kare üzerinde poz tespiti yapar."""
         results = self.pose_model(frame, conf=0.5, stream=True)
         return results
 
     def detect_emotion(self, face_frame):
-        """Kırpılmış yüz karesi üzerinde duygu analizi yapar."""
         if self.emotion_model is None or face_frame is None or face_frame.size == 0:
             return "neutral"
 
@@ -52,7 +48,6 @@ class YOLOModel:
         return "neutral"
 
     def extract_and_analyze(self, results, frame):
-        """YOLO sonuçlarından anahtar noktaları çıkarır ve duygu analizi yapar."""
         student_data = []
         for r in results:
             if r.keypoints is not None and r.keypoints.cpu().numpy() is not None:

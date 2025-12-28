@@ -1,13 +1,10 @@
 import numpy as np
 
-
 class AttentionAnalyzer:
-    """Poz ve duygu verilerini kullanarak dikkat seviyesini hesaplar."""
 
     def __init__(self):
         self.POSE_WEIGHT = 0.6  # Baş pozisyonunun skora katkısı
         self.EMOTION_WEIGHT = 0.4  # Duygunun skora katkısı
-
 
         self.HEAD_DOWN_NORM_THRESHOLD = 0.15
         self.HEAD_DOWN_THRESHOLD = 50
@@ -36,7 +33,6 @@ class AttentionAnalyzer:
 
             y_diff = nose[1] - avg_shoulder_y
 
-
             if body_height > 10:
                 normalized_diff = y_diff / body_height
             else:
@@ -52,9 +48,7 @@ class AttentionAnalyzer:
             return "UNKNOWN"
 
     def calculate_attention_score(self, pose_state, emotion_label="neutral"):
-        """Pose ve duygu durumuna göre 0-100 arası dikkat puanı hesaplama."""
 
-        # 1. Pose Puanı (0-100)
         pose_score = 0
         if pose_state == "ATTENTIVE":
             pose_score = 100
