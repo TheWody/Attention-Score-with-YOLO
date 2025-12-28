@@ -16,9 +16,9 @@ from yolo_model import YOLOModel
 from attention_analyzer import AttentionAnalyzer
 from client import APIClient
 
+from lesson_report import generate_lesson_report
 
 class VideoProcessingThread(QThread):
-    """Processes frames using YOLO and attention analysis."""
     frame_ready = pyqtSignal(np.ndarray, list)
     fps_updated = pyqtSignal(float)
     metrics_updated = pyqtSignal(dict)
@@ -130,7 +130,6 @@ class VideoProcessingThread(QThread):
         self.running = False
         self.wait()
 
-
 class MetricsTracker:
     def __init__(self, history_size=100):
         self.scores = deque(maxlen=history_size)
@@ -159,7 +158,6 @@ class MetricsTracker:
         self.scores.clear()
         self.frame_count = 0
         self.distracted_frames = 0
-
 
 class MinuteTracker:
     def __init__(self):
@@ -190,7 +188,6 @@ class MinuteTracker:
             'total_frames': self.frame_count
         }
 
-
 class StatCard(QFrame):
     def __init__(self, title, value, parent=None):
         super().__init__(parent)
@@ -216,7 +213,6 @@ class StatCard(QFrame):
 
 
 class MainWindow(QMainWindow):
-    """Main window with server integration."""
 
     def __init__(self, api_client: APIClient, course: dict, teacher: dict):
         super().__init__()
@@ -233,10 +229,10 @@ class MainWindow(QMainWindow):
         self.session_start = None
         self.server_session_id = None
 
-        # Dakikalık takip
         self.minute_tracker = MinuteTracker()
         self.current_minute = 0
         self.last_minute_save = None
+        self.minute_data_list = []
 
         self.snooze_timer = QTimer()
         self.snooze_timer.setSingleShot(True)
@@ -469,13 +465,21 @@ class MainWindow(QMainWindow):
             self.video_thread = None
 
     def _save_minute_data(self):
-        """Dakikalık verileri server'a gönderir."""
         if self.server_session_id is None:
             return
 
         summary = self.minute_tracker.get_summary()
         if summary is None:
             return
+
+        self.minute_data_list.append({
+            'minute_number': self.current_minute,
+            'avg_score': summary['avg_score'],
+            'min_score': summary['min_score'],
+            'max_score': summary['max_score'],
+            'avg_attentive': summary['avg_attentive'],
+            'avg_distracted': summary['avg_distracted']
+        })
 
         success = self.api_client.save_minute_metric(
             session_id=self.server_session_id,
@@ -495,7 +499,6 @@ class MainWindow(QMainWindow):
         if self.is_running:
             return
 
-        # Server'da session başlat
         self.server_session_id = self.api_client.start_session(self.course['course_id'])
         if not self.server_session_id:
             QMessageBox.critical(self, "Error", "Failed to start session on server")
@@ -510,6 +513,7 @@ class MainWindow(QMainWindow):
         self.current_minute = 0
         self.minute_tracker.reset()
         self.last_minute_save = datetime.now()
+        self.minute_data_list = []  # Rapor verilerini sıfırla
 
         self.video_thread = VideoProcessingThread()
         self.video_thread.frame_ready.connect(self._on_frame_ready)
@@ -527,11 +531,9 @@ class MainWindow(QMainWindow):
 
         self.is_running = False
 
-        # Son dakikanın verilerini kaydet
         if self.minute_tracker.frame_count > 0:
             self._save_minute_data()
 
-        # Session'ı server'da sonlandır
         if self.server_session_id is not None:
             duration = (datetime.now() - self.session_start).total_seconds()
             final_avg = self.api_client.end_session(
@@ -546,6 +548,21 @@ class MainWindow(QMainWindow):
                 minutes = int(duration // 60)
                 seconds = int(duration % 60)
 
+                try:
+                    report_path = generate_lesson_report(
+                        minute_data=self.minute_data_list,
+                        course_info=self.course,
+                        teacher_name=self.teacher['name'],
+                        duration_seconds=int(duration),
+                        avg_attention_score=final_avg,
+                        hypothesized_mean=60.0,
+                        alpha=0.05,
+                        open_browser=True
+                    )
+                    print(f"Report generated: {report_path}")
+                except Exception as e:
+                    print(f"Error generating report: {e}")
+
                 msg = QMessageBox(self)
                 msg.setWindowTitle("Session Completed")
                 msg.setText(f"Session has been saved to server")
@@ -554,7 +571,8 @@ class MainWindow(QMainWindow):
                     f"Duration: {minutes} min {seconds} sec\n"
                     f"Average Attention Score: {final_avg:.1f}\n"
                     f"Peak Score: {int(self.metrics.peak())}\n"
-                    f"Total Frames: {self.metrics.frame_count}"
+                    f"Total Frames: {self.metrics.frame_count}\n\n"
+                    f"📊 Detailed analysis report opened in browser!"
                 )
                 msg.setIcon(QMessageBox.Information)
                 msg.exec_()
@@ -571,6 +589,7 @@ class MainWindow(QMainWindow):
         self.server_session_id = None
         self.current_minute = 0
         self.minute_tracker.reset()
+        self.minute_data_list = []  # Rapor verilerini sıfırla
         self._update_all_labels()
         self.view_label.setText("Reset complete")
         self.banner.setVisible(False)
@@ -611,7 +630,6 @@ class MainWindow(QMainWindow):
 
         self.minute_tracker.add_data(score, self.current_attentive, self.current_distracted)
 
-        # Her dakika server'a kaydet
         if self.session_start and self.last_minute_save:
             elapsed = (datetime.now() - self.last_minute_save).total_seconds()
             if elapsed >= 60:
@@ -646,4 +664,3 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         self.on_stop()
-        event.accept()
