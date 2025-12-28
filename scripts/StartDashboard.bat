@@ -33,25 +33,12 @@ echo    Sifre:     admin123
 echo.
 echo  ═══════════════════════════════════════════════════════════
 echo.
-echo  [!] Bu pencereyi KAPATMAYIN - Sunucu calismaya devam ediyor
-echo  [!] Durdurmak icin CTRL+C basin
-echo.
-echo  ═══════════════════════════════════════════════════════════
-echo.
 
-:: Start browser after 2 seconds
-start "" "http://localhost:5001/dashboard"
+:: Change to project root directory
+cd /d "%~dp0\.."
 
 :: Run the server
-cd /d "%~dp0"
-if exist "dist\AttentionServer\AttentionServer.exe" (
-    dist\AttentionServer\AttentionServer.exe
-) else if exist "AttentionServer\AttentionServer.exe" (
-    AttentionServer\AttentionServer.exe
-) else (
-    echo HATA: AttentionServer.exe bulunamadi!
-    pause
-)
+python -m server.app
 
 pause
 

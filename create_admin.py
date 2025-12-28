@@ -1,4 +1,4 @@
-from app_server import app, db, Admin
+from server.app import app, db, Admin
 from werkzeug.security import generate_password_hash
 
 def create_admin():

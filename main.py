@@ -1,7 +1,6 @@
 import sys
 from PyQt5.QtWidgets import QApplication, QMessageBox
-from gui import MainWindow
-from login_window import LoginWindow
+from client.gui import MainWindow, LoginWindow
 from client import APIClient
 
 

@@ -1,159 +1,108 @@
-# 🎓 Classroom Attention Monitor with YOLO
+# Attention Score with YOLO
 
-YOLO tabanlı gerçek zamanlı sınıf dikkat takip sistemi. Öğretmenler ders anlatırken öğrencilerin dikkat seviyelerini ölçer ve analiz eder.
+Classroom attention monitoring system using YOLO pose estimation and emotion detection.
 
-## 📋 Özellikler
+## Project Structure
 
-### Öğretmen Uygulaması (Client)
-- 🔐 Öğretmen giriş ve kayıt sistemi
-- ➕ Yeni ders oluşturma
-- 📹 Gerçek zamanlı kamera ile dikkat analizi
-- 🎯 YOLO ile yüz/poz tespiti
-- 😊 Duygu analizi
-- 📊 Anlık dikkat skoru hesaplama
-- ⏱️ Dakikalık metrik kayıtları
-- 🔔 Düşük dikkat uyarıları
+```
+Attention-Score-with-YOLO/
+├── client/                    # Client (Teacher) application
+│   ├── __init__.py
+│   ├── api_client.py         # Server communication
+│   ├── config.json           # Client configuration
+│   └── gui/
+│       ├── __init__.py
+│       ├── main_window.py    # Main monitoring window
+│       └── login_window.py   # Login & registration
+│
+├── server/                    # Server (Dashboard) application
+│   ├── __init__.py
+│   ├── app.py                # Flask app with all routes
+│   └── templates/
+│       └── dashboard.html
+│
+├── core/                      # Shared analysis modules
+│   ├── __init__.py
+│   ├── yolo_model.py         # YOLO pose & emotion detection
+│   ├── attention_analyzer.py # Attention score calculation
+│   ├── camera_manager.py     # Camera feed handling
+│   └── lesson_report.py      # Lesson report generation
+│
+├── models/                    # YOLO model files
+│   ├── yolov8n-pose.pt
+│   └── yolov8n-cls.pt
+│
+├── scripts/                   # Startup scripts
+│   ├── StartClient.bat       # Windows client starter
+│   ├── StartClient.sh        # Mac/Linux client starter
+│   ├── StartDashboard.bat    # Windows server starter
+│   └── StartDashboard.sh     # Mac/Linux server starter
+│
+├── main.py                    # Client entry point
+├── run_server.py             # Server entry point
+├── create_admin.py           # Admin user creation utility
+└── requirements.txt
+```
 
-### Admin Dashboard (Web)
-- 📊 Tüm derslerin genel istatistikleri
-- 👨‍🏫 Öğretmen listesi ve performansları
-- 📚 Ders listesi
-- 📈 Oturum bazlı detaylı raporlar
-- 📉 Dakikalık dikkat grafikleri
-- 🔄 Otomatik yenileme
+## Quick Start
 
-## 🚀 Kurulum
-
-### Gereksinimler
-
+### 1. Install Dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### 1. Sunucuyu Başlat
+### 2. Start the Server (Dashboard)
+```bash
+# Windows
+scripts\StartDashboard.bat
+
+# Mac/Linux
+./scripts/StartDashboard.sh
+```
+
+Dashboard: http://localhost:5001/dashboard
+
+**Default Admin:**
+- Username: `admin`
+- Password: `admin123`
+
+### 3. Start the Client (Teacher App)
+```bash
+# Windows
+scripts\StartClient.bat
+
+# Mac/Linux
+./scripts/StartClient.sh
+```
+
+## Features
+
+- **Real-time Attention Monitoring**: Uses YOLO pose estimation to detect student attention
+- **Emotion Detection**: Analyzes facial expressions for engagement metrics
+- **Teacher Dashboard**: Login, register, and manage courses
+- **Admin Dashboard**: View all lessons and statistics
+- **Lesson Reports**: Automatic HTML report generation with charts
+
+## Configuration
+
+### Client Configuration (`client/config.json`)
+```json
+{
+    "server_url": "http://localhost:5001",
+    "version": "1.0.0"
+}
+```
+
+For remote server, change `localhost` to the server's IP address.
+
+## Building Executables
 
 ```bash
-python run_server.py
+# Build both client and server executables
+scripts\build_exe.bat
 ```
 
-Sunucu http://localhost:5001 adresinde çalışacaktır.
-
-### 2. Admin Kullanıcısı Oluştur
-
-```bash
-python create_admin.py
-```
-
-Bu script ile admin kullanıcısı oluşturabilirsiniz.
-
-### 3. Test Öğretmen Kullanıcısı Oluştur (Opsiyonel)
-
-```bash
-python create_test_user.py
-```
-
-### 4. Öğretmen Uygulamasını Başlat
-
-```bash
-python main.py
-```
-
-## 📱 Kullanım
-
-### Öğretmen Akışı
-
-1. `python main.py` ile uygulamayı başlatın
-2. **İlk kez kullanıyorsanız:** "Register" butonuna tıklayarak hesap oluşturun
-3. Email ve şifre ile giriş yapın
-4. Ders seçin veya yeni ders ekleyin ("+ Add New Course")
-5. "Start Session" ile ders kaydını başlatın
-6. Kamera dikkat skorlarını gerçek zamanlı gösterir
-7. "End Session" ile dersi bitirin ve verileri kaydedin
-
-### Admin Dashboard
-
-1. Tarayıcıda `http://localhost:5001/dashboard` adresine gidin
-2. Admin kullanıcı adı ve şifresi ile giriş yapın
-3. Tüm öğretmen ve derslerin skorlarını görüntüleyin
-4. Oturuma tıklayarak detaylı grafik görün
-
-## 🏗️ Mimari
-
-```
-┌─────────────────┐     HTTP API     ┌─────────────────┐
-│   Öğretmen      │ ◄──────────────► │    Flask        │
-│   Uygulaması    │                  │    Server       │
-│   (PyQt5)       │                  │                 │
-└─────────────────┘                  └────────┬────────┘
-                                              │
-┌─────────────────┐                  ┌────────▼────────┐
-│   Admin Web     │ ◄──────────────► │    SQLite       │
-│   Dashboard     │     HTTP API     │    Database     │
-└─────────────────┘                  └─────────────────┘
-```
-
-## 📁 Dosya Yapısı
-
-```
-├── server.py              # Flask API sunucusu
-├── run_server.py          # Sunucu başlatıcı
-├── client.py              # API client sınıfları
-├── main.py                # Öğretmen uygulaması ana dosya
-├── gui.py                 # Dikkat analizi GUI
-├── login_window.py        # Giriş penceresi
-├── yolo_model.py          # YOLO model wrapper
-├── attention_analyzer.py  # Dikkat analizi
-├── camera_manager.py      # Kamera yönetimi
-├── create_admin.py        # Admin oluşturma script'i
-├── create_test_user.py    # Test kullanıcısı oluşturma
-├── config.py              # Yapılandırma
-└── server/
-    └── templates/
-        └── dashboard.html # Admin dashboard
-```
-
-## 🔌 API Endpoints
-
-### Öğretmen API'leri
-- `POST /api/auth/register` - Kayıt
-- `POST /api/auth/login` - Giriş
-- `GET /api/courses` - Dersleri listele
-- `POST /api/courses` - Ders oluştur
-- `POST /api/sessions/start` - Oturum başlat
-- `POST /api/sessions/{id}/minute` - Dakikalık metrik kaydet
-- `POST /api/sessions/{id}/end` - Oturum bitir
-- `GET /api/sessions` - Oturumları listele
-
-### Admin API'leri
-- `POST /api/admin/login` - Admin girişi
-- `GET /api/admin/stats` - Genel istatistikler
-- `GET /api/admin/teachers` - Tüm öğretmenler
-- `GET /api/admin/courses` - Tüm dersler
-- `GET /api/admin/sessions` - Tüm oturumlar
-- `GET /api/admin/sessions/{id}` - Oturum detayı
-
-## 📊 Dikkat Skoru Hesaplama
-
-Dikkat skoru şu faktörlere göre hesaplanır:
-
-1. **Baş Pozisyonu**: Öğrencinin yüzü kameraya dönük mü?
-2. **Duygu Durumu**: Mutlu/nötr = dikkatli, üzgün/kızgın = dikkatsiz
-3. **Hareket**: Aşırı hareket = dikkatsizlik
-
-Skor 0-100 arasında bir değerdir:
-- 🟢 70-100: Dikkatli
-- 🟡 50-69: Orta
-- 🔴 0-49: Dikkatsiz
-
-## 🛠️ Teknolojiler
-
-- **Backend**: Flask, Flask-SQLAlchemy, Flask-CORS
-- **Frontend**: PyQt5 (Öğretmen App), HTML/CSS/JS (Dashboard)
-- **AI/ML**: YOLOv8, OpenCV
-- **Database**: SQLite
-- **Auth**: JWT
-
-## 📝 Lisans
+## License
 
 MIT License
 

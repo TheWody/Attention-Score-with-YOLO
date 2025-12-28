@@ -1,21 +1,37 @@
+import os
+from pathlib import Path
 from ultralytics import YOLO
+
+def get_model_path(filename):
+    """Model dosyasının yolunu bul"""
+    # Önce models/ klasörüne bak
+    base_dir = Path(__file__).parent.parent
+    model_path = base_dir / "models" / filename
+    if model_path.exists():
+        return str(model_path)
+    # Yoksa ana dizine bak
+    model_path = base_dir / filename
+    if model_path.exists():
+        return str(model_path)
+    return filename
 
 class YOLOModel:
 
     def __init__(self, pose_model_path='yolov8n-pose.pt', emotion_model_path='yolov8n-emotion.pt'):
-
-        self.pose_model = YOLO(pose_model_path)
-        print(f"YOLOv8 Pose modeli ({pose_model_path}) yüklendi.")
+        pose_path = get_model_path(pose_model_path)
+        self.pose_model = YOLO(pose_path)
+        print(f"YOLOv8 Pose modeli ({pose_path}) yüklendi.")
 
         try:
-            self.emotion_model = YOLO(emotion_model_path)
-            print(f"YOLOv8 Emotion modeli ({emotion_model_path}) yüklendi.")
+            emotion_path = get_model_path(emotion_model_path)
+            self.emotion_model = YOLO(emotion_path)
+            print(f"YOLOv8 Emotion modeli ({emotion_path}) yüklendi.")
             self.emotion_labels = ["angry", "disgust", "fear", "happy", "sad", "surprise", "neutral"]
         except Exception:
-
             print("Kullanıcı Duygu Modeli bulunamadı. Test amaçlı 'yolov8n-cls.pt' yükleniyor.")
             try:
-                self.emotion_model = YOLO('yolov8n-cls.pt')
+                cls_path = get_model_path('yolov8n-cls.pt')
+                self.emotion_model = YOLO(cls_path)
                 self.emotion_labels = ["happy", "neutral", "sad", "surprise", "angry", "fear", "disgust"] * 200
             except Exception as e:
                 print(f"Hata: Önceden eğitilmiş model bile yüklenemedi. ({e})")

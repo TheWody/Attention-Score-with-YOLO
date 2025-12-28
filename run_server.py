@@ -1,4 +1,4 @@
-from app_server import app, db
+from server.app import app, db
 
 def init_database():
     with app.app_context():

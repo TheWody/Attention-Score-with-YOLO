@@ -10,13 +10,11 @@ echo.
 echo  Uygulama baslatiliyor...
 echo.
 
-cd /d "%~dp0"
-if exist "dist\AttentionMonitor\AttentionMonitor.exe" (
-    start "" "dist\AttentionMonitor\AttentionMonitor.exe"
-) else if exist "AttentionMonitor\AttentionMonitor.exe" (
-    start "" "AttentionMonitor\AttentionMonitor.exe"
-) else (
-    echo HATA: AttentionMonitor.exe bulunamadi!
-    pause
-)
+:: Change to project root directory
+cd /d "%~dp0\.."
+
+:: Run the client
+python main.py
+
+pause
 

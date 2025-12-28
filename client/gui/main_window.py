@@ -11,12 +11,9 @@ from PyQt5.QtWidgets import (
     QSizePolicy, QSpacerItem, QLineEdit, QMessageBox
 )
 
-from camera_manager import CameraFeedManager
-from yolo_model import YOLOModel
-from attention_analyzer import AttentionAnalyzer
+from core import CameraFeedManager, YOLOModel, AttentionAnalyzer, generate_lesson_report
 from client import APIClient
 
-from lesson_report import generate_lesson_report
 
 class VideoProcessingThread(QThread):
     frame_ready = pyqtSignal(np.ndarray, list)
