@@ -12,8 +12,9 @@ pyinstaller --name "AttentionMonitor" ^
     --windowed ^
     --noconfirm ^
     --clean ^
-    --add-data "yolov8n-pose.pt;." ^
-    --add-data "yolov8n-cls.pt;." ^
+    --add-data "models/yolov8n-pose.pt;." ^
+    --add-data "models/yolov8n-cls.pt;." ^
+    --add-data "client/config.json;client" ^
     --add-data "server/templates;server/templates" ^
     --hidden-import ultralytics ^
     --hidden-import ultralytics.nn.tasks ^

@@ -3,8 +3,8 @@ import numpy as np
 class AttentionAnalyzer:
 
     def __init__(self):
-        self.POSE_WEIGHT = 0.6  # Baş pozisyonunun skora katkısı
-        self.EMOTION_WEIGHT = 0.4  # Duygunun skora katkısı
+        self.POSE_WEIGHT = 0.6
+        self.EMOTION_WEIGHT = 0.4
 
         self.HEAD_DOWN_NORM_THRESHOLD = 0.15
         self.HEAD_DOWN_THRESHOLD = 50
@@ -68,7 +68,7 @@ class AttentionAnalyzer:
         elif emotion_label in distracted_emotions:
             emotion_score = 40
         else:
-            emotion_score = 70  # Diğer veya bilinmeyen
+            emotion_score = 70
 
         final_score = (pose_score * self.POSE_WEIGHT) + (emotion_score * self.EMOTION_WEIGHT)
 
